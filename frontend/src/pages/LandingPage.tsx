@@ -379,7 +379,7 @@ const LandingPage: React.FC = () => {
                         style={{
                             position: 'absolute',
                             bottom: '65vh', left: '50%', transform: 'translateX(-50%)',
-                            width: isMobile ? '80vw' : '130vw', height: isMobile ? '80vw' : '130vw', maxWidth: '1600px', maxHeight: '1600px',
+                            width: isMobile ? '160vw' : '130vw', height: isMobile ? '160vw' : '130vw', maxWidth: '1600px', maxHeight: '1600px',
                             borderRadius: '50%',
                             background: 'radial-gradient(circle at 50% 50%, rgba(20,8,2,1) 0%, rgba(10,4,1,1) 30%, #0B0501 70%)',
                             borderBottom: '4px solid rgba(255,140,50,0.8)',
@@ -574,6 +574,7 @@ const LandingPage: React.FC = () => {
                                     position: 'absolute',
                                     width: '320px', height: '320px',
                                     left: '50%', top: '50%',
+                                    transform: 'translate(-50%, -50%)',
                                     borderRadius: '50%',
                                     background: 'radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(255,220,160,0.5) 30%, rgba(255,140,50,0.2) 55%, transparent 70%)',
                                     animation: isMobile ? 'orbPulse 2s ease-in-out infinite' : 'fieryPulse 2s ease-in-out infinite'
