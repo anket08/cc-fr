@@ -509,8 +509,10 @@ const LandingPage: React.FC = () => {
                             );
                         })}
                     </div>
+                    )}
 
                     {/* ─ EXPLOSION FLASH ─ */}
+                    {!isMobile && (
                     <AnimatePresence>
                         {animationStage === 2 && (
                             <div style={{
