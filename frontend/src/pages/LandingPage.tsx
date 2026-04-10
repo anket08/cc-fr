@@ -446,8 +446,7 @@ const LandingPage: React.FC = () => {
                     </motion.div>
 
                     {/* ─ FLOATING ICONS ROW (Merge Animation) ─ */}
-                    {!isMobile && (
-                        <div style={{ position: 'absolute', top: '35vh', left: '50%', zIndex: 4, transform: 'translateY(-50%)' }}>
+                    <div style={{ position: 'absolute', top: '35vh', left: '50%', zIndex: 4, transform: 'translateY(-50%)' }}>
                         {iconSymbols.map((icon, i) => {
                             const isIconMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
                             const isCenter = i === 3 || i === 4;
@@ -509,10 +508,8 @@ const LandingPage: React.FC = () => {
                             );
                         })}
                     </div>
-                    )}
 
                     {/* ─ EXPLOSION FLASH ─ */}
-                    {!isMobile && (
                     <AnimatePresence>
                         {animationStage === 2 && (
                             <div style={{
@@ -527,13 +524,12 @@ const LandingPage: React.FC = () => {
                                     style={{
                                         width: '120px', height: '120px', borderRadius: '50%',
                                         background: 'radial-gradient(circle, #fff 0%, rgba(255,180,80,0.8) 40%, transparent 70%)',
-                                        boxShadow: '0 0 120px 60px rgba(255,255,255,0.8), 0 0 200px 100px rgba(255,140,50,0.4)'
+                                        boxShadow: isMobile ? '0 0 60px 30px rgba(255,255,255,0.6), 0 0 100px 50px rgba(255,140,50,0.3)' : '0 0 120px 60px rgba(255,255,255,0.8), 0 0 200px 100px rgba(255,140,50,0.4)'
                                     }}
                                 />
                             </div>
                         )}
                     </AnimatePresence>
-                    )}
 
                     {/* ─ LOGO GROWS FROM ORB (after explosion) ─ */}
                     {animationStage >= 3 && (
@@ -571,7 +567,7 @@ const LandingPage: React.FC = () => {
                                     transform: 'translate(-50%, -50%)',
                                     borderRadius: '50%',
                                     background: 'radial-gradient(circle, rgba(255,104,3,0.4) 0%, rgba(255,60,0,0.15) 40%, transparent 65%)',
-                                    animation: isMobile ? 'none' : 'fieryGlowOuter 2s ease-in-out infinite'
+                                    animation: isMobile ? 'orbPulse 2s ease-in-out infinite' : 'fieryGlowOuter 2s ease-in-out infinite'
                                 }} />
                                 {/* Bright inner white glow - fiery pulsing */}
                                 <div style={{
@@ -580,7 +576,7 @@ const LandingPage: React.FC = () => {
                                     left: '50%', top: '50%',
                                     borderRadius: '50%',
                                     background: 'radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(255,220,160,0.5) 30%, rgba(255,140,50,0.2) 55%, transparent 70%)',
-                                    animation: isMobile ? 'none' : 'fieryPulse 2s ease-in-out infinite'
+                                    animation: isMobile ? 'orbPulse 2s ease-in-out infinite' : 'fieryPulse 2s ease-in-out infinite'
                                 }} />
                                 {/* Fire ring around logo */}
                                 <div style={{
@@ -591,7 +587,7 @@ const LandingPage: React.FC = () => {
                                     borderRadius: '50%',
                                     border: '2px solid rgba(255,140,50,0.3)',
                                     boxShadow: isMobile ? 'none' : '0 0 30px 10px rgba(255,104,3,0.25), inset 0 0 30px 10px rgba(255,104,3,0.15)',
-                                    animation: isMobile ? 'none' : 'fieryGlowOuter 2.5s ease-in-out infinite 0.3s'
+                                    animation: isMobile ? 'orbPulse 2.5s ease-in-out infinite 0.3s' : 'fieryGlowOuter 2.5s ease-in-out infinite 0.3s'
                                 }} />
                                 {/* The logo filled with WHITE + fiery breath */}
                                 <div style={{
@@ -606,51 +602,14 @@ const LandingPage: React.FC = () => {
                                     WebkitMaskPosition: 'center',
                                     maskPosition: 'center',
                                     background: '#FFFFFF',
-                                    boxShadow: isMobile ? 'none' : '0 0 40px 15px rgba(255,255,255,0.9), 0 0 80px 30px rgba(255,104,3,0.6)',
-                                    animation: isMobile ? 'none' : 'logoBreath 2s ease-in-out infinite'
+                                    boxShadow: isMobile ? '0 0 20px 5px rgba(255,255,255,0.5), 0 0 40px 15px rgba(255,104,3,0.3)' : '0 0 40px 15px rgba(255,255,255,0.9), 0 0 80px 30px rgba(255,104,3,0.6)',
+                                    animation: isMobile ? 'orbPulse 2s ease-in-out infinite' : 'logoBreath 2s ease-in-out infinite'
                                 }} />
                             </motion.div>
                         </div>
                     )}
 
                     {/* ── HERO TEXT CONTENT ── */}
-                    {isMobile ? (
-                      <div style={{ padding: "100px 20px", textAlign: "center", position: 'relative', zIndex: 10, marginTop: '25vh' }}>
-                        <h1 className="landing-title" style={{ fontSize: 'clamp(32px, 8vw, 48px)', color: '#fff', textTransform: 'uppercase', textShadow: '0 4px 10px rgba(0,0,0,0.8)', marginBottom: '16px' }}>
-                          SIMPLIFYING DEVOPS CHAOS
-                        </h1>
-                        <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: '1rem', lineHeight: '1.6', marginBottom: '32px' }}>
-                          Smart DevOps Platform for a Smarter Tomorrow
-                        </p>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'center' }}>
-                            <button
-                                onClick={() => navigate('/login')}
-                                style={{
-                                    background: '#fff', color: '#0B0501', border: 'none',
-                                    borderRadius: '10px', padding: '14px 34px',
-                                    fontWeight: 500, fontSize: '0.9rem', cursor: 'pointer',
-                                    fontFamily: "'Satoshi', sans-serif",
-                                    display: 'flex', alignItems: 'center', gap: '8px',
-                                    width: '100%', justifyContent: 'center'
-                                }}
-                            >
-                                Get Started <span style={{ fontSize: '1.2rem', marginLeft: '4px' }}>→</span>
-                            </button>
-                            <button
-                                onClick={() => setIsChangelogOpen(true)}
-                                style={{
-                                    background: 'transparent', color: 'rgba(255,255,255,0.7)',
-                                    border: '1px solid rgba(255,255,255,0.15)',
-                                    borderRadius: '10px', padding: '14px 34px',
-                                    fontWeight: 400, fontSize: '0.9rem', cursor: 'pointer',
-                                    fontFamily: "'Satoshi', sans-serif', width: '100%', justifyContent: 'center'"
-                                }}
-                            >
-                                Contact Us
-                            </button>
-                        </div>
-                      </div>
-                    ) : (
                     <div style={{ position: 'relative', zIndex: 10, marginTop: '45vh', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0 16px' }}>
                         <motion.h1
                             className="landing-title"
@@ -694,7 +653,7 @@ const LandingPage: React.FC = () => {
                         <motion.div
                             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.8, delay: 0.9 }}
-                            style={{ display: 'flex', gap: '16px', marginTop: '36px' }}
+                            style={{ display: 'flex', gap: '16px', marginTop: '36px', flexWrap: 'wrap', justifyContent: 'center' }}
                         >
                             <button
                                 onClick={() => navigate('/login')}
@@ -729,7 +688,6 @@ const LandingPage: React.FC = () => {
                             </button>
                         </motion.div>
                     </div>
-                    )}
 
                     {/* ─ BOTTOM CORNER CARDS (Coinery style stats cards) ─ */}
                     <motion.div
