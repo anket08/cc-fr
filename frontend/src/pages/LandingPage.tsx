@@ -58,6 +58,17 @@ html, body, #root {
     }
 }
 
+@keyframes fieryPulseMobile {
+    0%, 100% {
+        filter: blur(10px) brightness(1);
+        transform: translate(-50%, -50%) scale(1);
+    }
+    50% {
+        filter: blur(15px) brightness(1.2);
+        transform: translate(-50%, -50%) scale(1.05);
+    }
+}
+
 @keyframes fieryGlowOuter {
     0%, 100% {
         filter: blur(40px) brightness(1);
@@ -69,12 +80,32 @@ html, body, #root {
     }
 }
 
+@keyframes fieryGlowOuterMobile {
+    0%, 100% {
+        filter: blur(15px) brightness(1);
+        opacity: 0.8;
+    }
+    50% {
+        filter: blur(25px) brightness(1.2);
+        opacity: 1;
+    }
+}
+
 @keyframes logoBreath {
     0%, 100% {
         filter: drop-shadow(0 0 20px rgba(255,255,255,0.9)) drop-shadow(0 0 50px rgba(255,140,50,0.8)) drop-shadow(0 0 100px rgba(255,104,3,0.5));
     }
     50% {
         filter: drop-shadow(0 0 30px rgba(255,255,255,1)) drop-shadow(0 0 70px rgba(255,140,50,1)) drop-shadow(0 0 130px rgba(255,104,3,0.7));
+    }
+}
+
+@keyframes logoBreathMobile {
+    0%, 100% {
+        filter: drop-shadow(0 0 15px rgba(255,255,255,0.8)) drop-shadow(0 0 30px rgba(255,104,3,0.5));
+    }
+    50% {
+        filter: drop-shadow(0 0 20px rgba(255,255,255,1)) drop-shadow(0 0 45px rgba(255,104,3,0.8));
     }
 }
 
@@ -393,7 +424,7 @@ const LandingPage: React.FC = () => {
                             bottom: 0, left: '20%', right: '20%', height: '20%',
                             borderRadius: '50%',
                             background: 'radial-gradient(ellipse at bottom, rgba(255,120,40,0.4) 0%, transparent 70%)',
-                            filter: isMobile ? 'none' : 'blur(30px)'
+                            filter: isMobile ? 'blur(15px)' : 'blur(30px)'
                         }} />
                         {/* Faint side glows */}
                         <div style={{
@@ -441,7 +472,7 @@ const LandingPage: React.FC = () => {
                         <div style={{
                             position: 'absolute', width: '40px', height: '40px', background: '#fff',
                             transform: 'rotate(45deg)', borderRadius: '8px',
-                            boxShadow: isMobile ? 'none' : '0 0 40px 15px rgba(255,255,255,0.9), 0 0 80px 30px rgba(255,104,3,0.6)'
+                            boxShadow: isMobile ? '0 0 20px 5px rgba(255,255,255,0.9), 0 0 40px 10px rgba(255,104,3,0.6)' : '0 0 40px 15px rgba(255,255,255,0.9), 0 0 80px 30px rgba(255,104,3,0.6)'
                         }} />
                     </motion.div>
 
@@ -495,8 +526,8 @@ const LandingPage: React.FC = () => {
                                         border: '1px solid rgba(255,255,255,0.2)',
                                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                                         color: 'rgba(255,255,255,0.9)',
-                                        backdropFilter: isIconMobile ? 'none' : 'blur(16px)',
-                                        boxShadow: isIconMobile ? 'none': '0 4px 30px rgba(0,0,0,0.5), inset 0 0 20px rgba(255,255,255,0.1)',
+                                        backdropFilter: isIconMobile ? 'blur(4px)' : 'blur(16px)',
+                                        boxShadow: isIconMobile ? '0 2px 10px rgba(0,0,0,0.5), inset 0 0 10px rgba(255,255,255,0.1)' : '0 4px 30px rgba(0,0,0,0.5), inset 0 0 20px rgba(255,255,255,0.1)',
                                         pointerEvents: 'auto' as const,
                                         marginTop: `-${sizeNum / 2}px`
                                     }}
@@ -567,7 +598,7 @@ const LandingPage: React.FC = () => {
                                     transform: 'translate(-50%, -50%)',
                                     borderRadius: '50%',
                                     background: 'radial-gradient(circle, rgba(255,104,3,0.4) 0%, rgba(255,60,0,0.15) 40%, transparent 65%)',
-                                    animation: isMobile ? 'orbPulse 2s ease-in-out infinite' : 'fieryGlowOuter 2s ease-in-out infinite'
+                                    animation: isMobile ? 'fieryGlowOuterMobile 2s ease-in-out infinite' : 'fieryGlowOuter 2s ease-in-out infinite'
                                 }} />
                                 {/* Bright inner white glow - fiery pulsing */}
                                 <div style={{
@@ -577,7 +608,7 @@ const LandingPage: React.FC = () => {
                                     transform: 'translate(-50%, -50%)',
                                     borderRadius: '50%',
                                     background: 'radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(255,220,160,0.5) 30%, rgba(255,140,50,0.2) 55%, transparent 70%)',
-                                    animation: isMobile ? 'orbPulse 2s ease-in-out infinite' : 'fieryPulse 2s ease-in-out infinite'
+                                    animation: isMobile ? 'fieryPulseMobile 2s ease-in-out infinite' : 'fieryPulse 2s ease-in-out infinite'
                                 }} />
                                 {/* Fire ring around logo */}
                                 <div style={{
@@ -587,8 +618,8 @@ const LandingPage: React.FC = () => {
                                     transform: 'translate(-50%, -50%)',
                                     borderRadius: '50%',
                                     border: '2px solid rgba(255,140,50,0.3)',
-                                    boxShadow: isMobile ? 'none' : '0 0 30px 10px rgba(255,104,3,0.25), inset 0 0 30px 10px rgba(255,104,3,0.15)',
-                                    animation: isMobile ? 'orbPulse 2.5s ease-in-out infinite 0.3s' : 'fieryGlowOuter 2.5s ease-in-out infinite 0.3s'
+                                    boxShadow: isMobile ? '0 0 15px 5px rgba(255,104,3,0.25), inset 0 0 15px 5px rgba(255,104,3,0.15)' : '0 0 30px 10px rgba(255,104,3,0.25), inset 0 0 30px 10px rgba(255,104,3,0.15)',
+                                    animation: isMobile ? 'fieryGlowOuterMobile 2.5s ease-in-out infinite 0.3s' : 'fieryGlowOuter 2.5s ease-in-out infinite 0.3s'
                                 }} />
                                 {/* The logo filled with WHITE + fiery breath */}
                                 <div style={{
@@ -604,7 +635,7 @@ const LandingPage: React.FC = () => {
                                     maskPosition: 'center',
                                     background: '#FFFFFF',
                                     boxShadow: isMobile ? '0 0 20px 5px rgba(255,255,255,0.5), 0 0 40px 15px rgba(255,104,3,0.3)' : '0 0 40px 15px rgba(255,255,255,0.9), 0 0 80px 30px rgba(255,104,3,0.6)',
-                                    animation: isMobile ? 'orbPulse 2s ease-in-out infinite' : 'logoBreath 2s ease-in-out infinite'
+                                    animation: isMobile ? 'logoBreathMobile 2s ease-in-out infinite' : 'logoBreath 2s ease-in-out infinite'
                                 }} />
                             </motion.div>
                         </div>
