@@ -1,0 +1,56 @@
+
+Use a GitHub App (not personal token)
+Install the app on your org/repo.
+Permissions: Contents Read, Pull Requests Read, Checks Read, Actions Read, Security Events Read.
+Webhooks: push, pull_request, workflow_run, check_suite, release.
+Reason: works for 1000+ company style setup, secure, auditable, revocable.
+Add backend integration endpoints in Cymops
+OAuth/App install callback endpoint
+Webhook receiver endpoint with signature validation
+Background sync job endpoint/service for backfill
+Store integration data in DB
+github_installations
+github_repos
+github_commits
+github_prs
+github_checks
+github_vulnerabilities
+report_snapshots
+db_incidents
+Build codebase report pipeline
+Pull data from GitHub API + webhook events
+Calculate:
+PR lead time
+Change failure rate
+Flaky pipelines
+Security alerts
+Test pass trend
+Files/components with highest change risk
+Generate daily and on-demand reports
+Build DB incident pipeline
+Collect from PostgreSQL:
+slow queries
+deadlocks
+connection pool saturation
+replication lag (if used)
+lock waits
+Also ingest app errors/timeouts from your backend logs/metrics
+Mark severity and incident window start/end
+Correlate code with incidents (most important)
+For each incident window, map:
+recent deployments/commits
+PRs merged in last X hours
+schema migrations executed before incident
+Output likely root-cause candidates with confidence score
+Show in Cymops dashboard
+One “Engineering Health Report” screen:
+Code Health
+DB Health
+Incident Correlation
+Top risky services
+Recommended actions
+Security and compliance
+Keep GitHub App private key and webhook secret in env
+Encrypt tokens at rest
+Add retry queues + idempotency keys for webhook processing
+Add audit logs for every integration action

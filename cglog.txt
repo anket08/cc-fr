@@ -1,0 +1,187 @@
+# 🚀 CyMOPS – Development Changelog
+
+## 📌 Overview
+This document tracks the complete development journey of CyMOPS, including:
+- Features introduced
+- Issues encountered
+- Fixes applied
+- Architecture improvements
+- Future roadmap
+
+---
+
+# 🧩 Phase-wise Development
+
+## 🔹 Phase 1.0 – Foundation
+- Spring Boot project initialization
+- JWT Authentication implemented
+- PostgreSQL schema setup using Flyway
+
+---
+
+## 🔹 Phase 1.2 – Core Features
+- Incident Room CRUD
+- Message persistence
+- Project members system
+
+---
+
+## 🔹 Phase 1.3 – Access Control
+- Role-Based Access Control (RBAC)
+  - ADMIN
+  - MEMBER
+
+---
+
+## 🔹 Phase 1.4 – Security Enhancements
+- JWT Refresh Tokens
+- Audit Logging
+- Rate Limiting
+
+---
+
+## 🔹 Phase 1.5 – Real-Time System
+- WebSocket Chat Integration
+- Redis Pub/Sub for multi-instance broadcasting
+
+---
+
+## 🔹 Phase 2 – Collaboration Features
+- Pending Invite System
+- Online / Last Seen Tracking
+- Multi-page layout
+
+---
+
+## 🔹 Phase 2.5 – Smart Data Layer
+- Smart Search Implementation
+- Multi-project Dashboard
+- User-specific Data Isolation
+
+---
+
+## 🔹 Phase 3 – Advanced Tracking System (Latest 🚀)
+- Kanban Board (Drag & Drop)
+- Sprint Management
+- Jira-like Issue Tracking
+
+---
+
+# 🎨 UI Enhancements
+- Premium Glassmorphism UI
+- Modern UI/UX redesign
+- Toast Notifications replacing legacy alerts
+
+---
+
+# ⚠️ Issues & Fixes
+
+## ❌ Frontend Issues
+
+### 1. Blank Screen in React
+- Cause: Rendering mismatch / incorrect component setup
+- Fix: Proper component structure + routing fixes
+
+### 2. Icon Mismatch
+- Cause: Incorrect icon imports / library mismatch
+- Fix: Standardized icon usage
+
+---
+
+## ❌ Backend Issues
+
+### 3. Chat Notifications Not Broadcasting
+- Cause: Messages were not reaching all users
+- Fix:
+  - Implemented WebSocket personal topics:
+    ```
+    /user/{userId}/...
+    ```
+
+---
+
+### 4. Data Leak Across Projects
+- Cause: Improper repository queries
+- Fix:
+  - Strict filtering using userId + projectId
+  - Enforced data isolation at query level
+
+---
+
+### 5. Legacy Alerts
+- Issue: Old alert() based system
+- Fix:
+  - Replaced with modern Toast Notifications
+
+---
+
+# 🏗️ Current Architecture
+
+## 🧠 Backend
+- Java Spring Boot
+- PostgreSQL
+- Redis (for chat scaling)
+- WebSockets
+
+## 🎨 Frontend
+- React (TypeScript)
+- Tailwind CSS
+
+---
+
+# 📊 Key Features Implemented
+
+- Real-time Chat System
+- User-specific Data Isolation
+- Kanban Board (Drag & Drop)
+- Sprint Tracking
+- Issue Tracking (Jira-like)
+- Multi-project Dashboard
+- Role-based Access
+- Notification System
+
+---
+
+# 🚧 Pending / In Progress
+
+- JWT Auth improvements (multiple login options)
+- PostgreSQL deployment (cloud hosting)
+- Admin Panel
+- User Management Dashboard
+- Members management system
+- Improved drag-and-drop fixes (Kanban)
+- "Done" state improvements
+
+---
+
+# 🔮 Future Roadmap
+
+- Grafana-like Monitoring System
+- Advanced Analytics Dashboard
+- Production Deployment (Docker + Cloud)
+- Notification system integration with Git
+- Enhanced Sprint Management
+- AI-based Incident Assistant
+
+---
+
+# 🧠 Developer Notes
+
+- Maintain strict data isolation per user
+- Avoid global queries without filters
+- Always use WebSocket topics for user-specific messaging
+- Prefer modern UI patterns over legacy alerts
+
+---
+
+# 📌 Conclusion
+
+CyMOPS has evolved from a basic incident management system into a full-fledged
+AI-ready DevOps collaboration platform with:
+
+- Real-time capabilities
+- Scalable backend architecture
+- Modern UI/UX
+- Jira-like tracking system
+
+---

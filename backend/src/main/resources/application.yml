@@ -1,0 +1,86 @@
+spring:
+  application:
+    name: cymops
+  config:
+    import: optional:file:.env[.properties]
+  datasource:
+    url: jdbc:postgresql://localhost:5432/cymops
+    username: postgres
+    password: postgrespassword # Change this in production
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+jwt:
+  secret: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+  access-token-expiration: 900000 # 15 minutes in ms
+  refresh-token-expiration: 604800000 # 7 days in ms
+
+ai:
+  api:
+    provider: ${AI_PROVIDER:gemini}
+    key: ${AI_API_KEY:}
+    base-url: ${AI_API_BASE_URL:https://generativelanguage.googleapis.com/v1beta}
+    model: ${AI_MODEL:gemini-2.5-flash}
+    connect-timeout-ms: ${AI_API_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${AI_API_READ_TIMEOUT_MS:30000}
+  insights:
+    cache-minutes: ${AI_INSIGHTS_CACHE_MINUTES:10}
+
+github:
+  api:
+    base-url: ${GITHUB_API_BASE_URL:https://api.github.com}
+    token: ${GITHUB_API_TOKEN:}
+  repo:
+    owner: ${GITHUB_REPO_OWNER:}
+    name: ${GITHUB_REPO_NAME:}
+  webhook:
+    secret: ${GITHUB_WEBHOOK_SECRET:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http:
+          server:
+            requests: true
+
+observability:
+  alerts:
+    latency-p95-ms: ${ALERT_LATENCY_P95_MS:800}
+    error-rate-percent: ${ALERT_ERROR_RATE_PERCENT:3}
+    cpu-utilization-percent: ${ALERT_CPU_UTILIZATION_PERCENT:85}
+    memory-utilization-percent: ${ALERT_MEMORY_UTILIZATION_PERCENT:90}
+    db-connection-utilization-percent: ${ALERT_DB_CONNECTION_UTILIZATION_PERCENT:85}
+  db-audit:
+    cron: ${DB_AUDIT_CRON:0 0 2 * * *}
+    capacity-threshold-percent: ${DB_AUDIT_CAPACITY_THRESHOLD_PERCENT:80}
+    connection-threshold-percent: ${DB_AUDIT_CONNECTION_THRESHOLD_PERCENT:85}
+  ingest:
+    rate-limit:
+      per-key-requests-per-minute: ${INGEST_PER_KEY_REQUESTS_PER_MINUTE:1000}
+    quota:
+      metrics:
+        per-project-requests-per-minute: ${INGEST_METRICS_PER_PROJECT_REQUESTS_PER_MINUTE:1000}
+        per-project-bytes-per-second: ${INGEST_METRICS_PER_PROJECT_BYTES_PER_SECOND:10485760}
+      logs:
+        per-project-requests-per-minute: ${INGEST_LOGS_PER_PROJECT_REQUESTS_PER_MINUTE:1000}
+        per-project-bytes-per-second: ${INGEST_LOGS_PER_PROJECT_BYTES_PER_SECOND:10485760}
+    queue:
+      stream-key: ${INGEST_QUEUE_STREAM_KEY:cymops:ingest:events}
+      consumer-group: ${INGEST_QUEUE_CONSUMER_GROUP:cymops-ingest-workers}
+      batch-size: ${INGEST_QUEUE_BATCH_SIZE:100}
+      worker-fixed-delay-ms: ${INGEST_QUEUE_WORKER_FIXED_DELAY_MS:500}

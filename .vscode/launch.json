@@ -1,0 +1,14 @@
+{
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Spring Boot-CymopsApplication<cymops>",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "mainClass": "com.cymops.CymopsApplication",
+            "projectName": "cymops",
+            "args": "",
+            "envFile": "${workspaceFolder}/.env"
+        }
+    ]
+}

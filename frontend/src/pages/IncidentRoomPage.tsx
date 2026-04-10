@@ -1,0 +1,1095 @@
+import React, { useEffect, useState, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import SockJS from 'sockjs-client';
+import { Client } from '@stomp/stompjs';
+import api from '../api/axios';
+import { useAuth } from '../context/AuthContext';
+import { Hash, ArrowLeft, Send, Paperclip, Download, FileText, X, Sparkles } from 'lucide-react';
+
+// Simple markdown-to-JSX renderer for CYAI responses
+function renderMarkdown(text: string): React.ReactNode[] {
+    if (!text) return [];
+    const lines = text.split('\n');
+    const elements: React.ReactNode[] = [];
+    
+    lines.forEach((line, i) => {
+        // Headers
+        if (line.startsWith('### ')) {
+            elements.push(<h4 key={i} style={{ margin: '10px 0 4px', fontSize: '0.85rem', fontWeight: 700, color: 'var(--accent-light, #a78bfa)' }}>{renderInline(line.slice(4))}</h4>);
+            return;
+        }
+        if (line.startsWith('## ')) {
+            elements.push(<h3 key={i} style={{ margin: '10px 0 4px', fontSize: '0.9rem', fontWeight: 700, color: 'var(--accent-light, #a78bfa)' }}>{renderInline(line.slice(3))}</h3>);
+            return;
+        }
+        // Horizontal rule
+        if (line.trim() === '---' || line.trim() === '***') {
+            elements.push(<hr key={i} style={{ border: 'none', borderTop: '1px solid rgba(139,92,246,0.2)', margin: '8px 0' }} />);
+            return;
+        }
+        // Bullet points
+        if (line.trim().startsWith('- ') || line.trim().startsWith('• ') || line.trim().startsWith('* ')) {
+            const bulletText = line.trim().replace(/^[-•*]\s/, '');
+            elements.push(
+                <div key={i} style={{ display: 'flex', gap: '8px', padding: '2px 0', alignItems: 'flex-start' }}>
+                    <span style={{ color: 'var(--accent)', fontWeight: 700, flexShrink: 0, marginTop: '1px' }}>•</span>
+                    <span>{renderInline(bulletText)}</span>
+                </div>
+            );
+            return;
+        }
+        // Numbered lists
+        const numMatch = line.trim().match(/^(\d+)\.\s(.*)/);
+        if (numMatch) {
+            elements.push(
+                <div key={i} style={{ display: 'flex', gap: '8px', padding: '2px 0', alignItems: 'flex-start' }}>
+                    <span style={{ color: 'var(--accent)', fontWeight: 700, flexShrink: 0, fontSize: '0.8rem', marginTop: '2px' }}>{numMatch[1]}.</span>
+                    <span>{renderInline(numMatch[2])}</span>
+                </div>
+            );
+            return;
+        }
+        // Empty line = spacing
+        if (line.trim() === '') {
+            elements.push(<div key={i} style={{ height: '6px' }} />);
+            return;
+        }
+        // Plain paragraph
+        elements.push(<p key={i} style={{ margin: '2px 0', lineHeight: '1.5' }}>{renderInline(line)}</p>);
+    });
+    
+    return elements;
+}
+
+// Inline markdown: **bold**, *italic*, `code`
+function renderInline(text: string): React.ReactNode[] {
+    const parts: React.ReactNode[] = [];
+    // Process **bold**, *italic*, and `code`
+    const regex = /(\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`)/g;
+    let lastIndex = 0;
+    let match;
+    let key = 0;
+    while ((match = regex.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+            parts.push(text.slice(lastIndex, match.index));
+        }
+        if (match[2]) {
+            parts.push(<strong key={key++} style={{ fontWeight: 700, color: '#e2e8f0' }}>{match[2]}</strong>);
+        } else if (match[3]) {
+            parts.push(<em key={key++}>{match[3]}</em>);
+        } else if (match[4]) {
+            parts.push(<code key={key++} style={{ background: 'rgba(139,92,246,0.15)', padding: '1px 5px', borderRadius: '4px', fontSize: '0.85em', fontFamily: 'monospace' }}>{match[4]}</code>);
+        }
+        lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < text.length) {
+        parts.push(text.slice(lastIndex));
+    }
+    return parts.length > 0 ? parts : [text];
+}
+
+const NOTIF_KEY = 'cymops_room_notifs';
+
+function addRoomActivity(roomId: string, content: string, sender: string, isMine: boolean) {
+    const existing: any[] = JSON.parse(localStorage.getItem(NOTIF_KEY) || '[]');
+    const idx = existing.findIndex((n: any) => n.roomId === roomId);
+    const entry = { roomId, count: 1, lastMsg: content, sender, isMine, ts: Date.now() };
+    if (idx >= 0) {
+        existing[idx] = { ...existing[idx], ...entry, count: existing[idx].count + 1 };
+    } else {
+        existing.push(entry);
+    }
+    localStorage.setItem(NOTIF_KEY, JSON.stringify(existing));
+    window.dispatchEvent(new Event('cymops_notif_update'));
+}
+
+function clearRoomNotification(roomId: string) {
+    const existing: any[] = JSON.parse(localStorage.getItem(NOTIF_KEY) || '[]');
+    localStorage.setItem(NOTIF_KEY, JSON.stringify(existing.filter((n: any) => n.roomId !== roomId)));
+    window.dispatchEvent(new Event('cymops_notif_update'));
+}
+
+interface Attachment {
+    name: string;
+    type: string;
+    data: string; // base64
+    size?: number;
+}
+
+const IncidentRoomPage: React.FC = () => {
+    const { roomId } = useParams<{ roomId: string }>();
+    const { token } = useAuth();
+    const navigate = useNavigate();
+
+    const [messages, setMessages] = useState<any[]>([]);
+    const [currentUserEmail, setCurrentUserEmail] = useState('');
+    const [inputMsg, setInputMsg] = useState('');
+    const [status, setStatus] = useState<'connecting' | 'live' | 'error' | 'disconnected'>('connecting');
+    const [roomData, setRoomData] = useState<any>(null);
+    const [timelineEvents, setTimelineEvents] = useState<any[]>([]);
+    const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
+    const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
+    const typingTimeoutRef = useRef<{ [key: string]: ReturnType<typeof setTimeout> }>({});
+    const [_isLoadingAi, setIsLoadingAi] = useState(false);
+    
+    const [reactions, setReactions] = useState<{ [msgKey: string]: { [emoji: string]: string[] } }>({});
+    
+    // Threading State
+    const [activeThreadIdx, setActiveThreadIdx] = useState<number | null>(null);
+    const [threadInput, setThreadInput] = useState('');
+
+    const stompClient = useRef<Client | null>(null);
+
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLTextAreaElement>(null);
+
+    useEffect(() => {
+        const storedReactions = localStorage.getItem(`cymops_reactions_${roomId}`);
+        if (storedReactions) {
+            try {
+                setReactions(JSON.parse(storedReactions));
+            } catch(e){}
+        }
+    }, [roomId]);
+
+    useEffect(() => {
+        if (token) {
+            try {
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                setCurrentUserEmail(payload.sub);
+                localStorage.setItem('cymops_email', payload.sub || '');
+            } catch (e) {}
+        }
+        if (roomId) clearRoomNotification(roomId);
+    }, [token, roomId]);
+
+    useEffect(() => {
+        const fetchHistory = async () => {
+            try {
+                const res = await api.get(`/rooms/${roomId}/messages`);
+                setMessages(res.data);
+            } catch (e) {}
+        };
+        fetchHistory();
+
+        const rawToken = localStorage.getItem('token') || token || '';
+        if (rawToken) {
+            try {
+                const payload = JSON.parse(atob(rawToken.split('.')[1]));
+                if (Date.now() >= payload.exp * 1000) {
+                    localStorage.removeItem('token');
+                    window.location.href = '/login';
+                    return;
+                }
+            } catch (e) {}
+        }
+
+        const client = new Client({
+            webSocketFactory: () => new SockJS('http://localhost:8080/ws'),
+            connectHeaders: { token: rawToken, Authorization: `Bearer ${rawToken}` },
+            reconnectDelay: 5000,
+            onConnect: () => {
+                setStatus('live');
+                client.subscribe(`/topic/rooms/${roomId}`, (msg) => {
+                    const parsed = JSON.parse(msg.body);
+                    
+                    if (parsed.type === 'TYPING') {
+                        const user = parsed.user || parsed.sender;
+                        const myEmail = localStorage.getItem('cymops_email') || '';
+                        if (user && user !== myEmail) {
+                            setTypingUsers(prev => {
+                                const next = new Set(prev);
+                                next.add(user);
+                                return next;
+                            });
+                            if (typingTimeoutRef.current[user]) clearTimeout(typingTimeoutRef.current[user]);
+                            typingTimeoutRef.current[user] = setTimeout(() => {
+                                setTypingUsers(prev => {
+                                    const next = new Set(prev);
+                                    next.delete(user);
+                                    return next;
+                                });
+                            }, 3000);
+                        }
+                        return;
+                    }
+
+                    if (parsed.type === 'REACTION') {
+                        const msgKey = parsed.msgKey;
+                        const emoji = parsed.emoji;
+                        const user = parsed.user;
+                        setReactions(prev => {
+                            const newReactions = { ...prev };
+                            newReactions[msgKey] = { ...(prev[msgKey] || {}) };
+                            
+                            // Remove user from all other emojis on this message (single-reaction rule)
+                            for (const otherEmoji of Object.keys(newReactions[msgKey])) {
+                                if (otherEmoji !== emoji) {
+                                    const uList = newReactions[msgKey][otherEmoji] || [];
+                                    if (uList.includes(user)) {
+                                        const filtered = uList.filter(u => u !== user);
+                                        if (filtered.length === 0) delete newReactions[msgKey][otherEmoji];
+                                        else newReactions[msgKey][otherEmoji] = filtered;
+                                    }
+                                }
+                            }
+
+                            const currentUsers = newReactions[msgKey][emoji] ? [...newReactions[msgKey][emoji]] : [];
+                            
+                            if (currentUsers.includes(user)) {
+                                const nextUsers = currentUsers.filter(u => u !== user);
+                                if (nextUsers.length === 0) delete newReactions[msgKey][emoji];
+                                else newReactions[msgKey][emoji] = nextUsers;
+                            } else {
+                                currentUsers.push(user);
+                                newReactions[msgKey][emoji] = currentUsers;
+                            }
+                            
+                            localStorage.setItem(`cymops_reactions_${roomId}`, JSON.stringify(newReactions));
+                            return newReactions;
+                        });
+                        return;
+                    }
+
+                    setMessages(prev => [...prev, parsed]);
+                    const myEmail = localStorage.getItem('cymops_email') || '';
+                    if (parsed.sender !== 'AI') {
+                        addRoomActivity(roomId!, parsed.content, parsed.sender, parsed.sender === myEmail);
+                    }
+                });
+            },
+            onStompError: () => setStatus('error'),
+            onWebSocketClose: () => setStatus('disconnected'),
+            onWebSocketError: () => setStatus('error'),
+        });
+        client.activate();
+        stompClient.current = client;
+
+        return () => { if (stompClient.current) stompClient.current.deactivate(); };
+    }, [roomId, token]);
+
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages]);
+
+    useEffect(() => {
+        const fetchRoomData = async () => {
+            try {
+                const res = await api.get(`/rooms/room/${roomId}`);
+                setRoomData(res.data);
+            } catch (e) {}
+        };
+        const fetchTimeline = async () => {
+            try {
+                const res = await api.get(`/rooms/${roomId}/timeline`);
+                setTimelineEvents(res.data);
+            } catch (e) {}
+        };
+        fetchRoomData();
+        fetchTimeline();
+
+        const i = setInterval(() => {
+           api.get(`/rooms/${roomId}/timeline`).then(res => setTimelineEvents(res.data)).catch(console.error);
+        }, 3000);
+        return () => clearInterval(i);
+    }, [roomId]);
+
+    const handleStatusChange = async (newStatus: string) => {
+        if (!roomData) return;
+        try {
+             const res = await api.patch(`/rooms/${roomId}/status`, { status: newStatus });
+             setRoomData(res.data);
+             if (newStatus === 'RESOLVED' && roomData.status !== 'RESOLVED') {
+                 handleGenerateSummary();
+             }
+        } catch (e) {}
+    };
+
+    const handleGenerateSummary = async () => {
+        setIsLoadingAi(true);
+        setTypingUsers(prev => new Set(prev).add('CYAI'));
+        
+        try {
+            const endpoint = roomData?.status === 'RESOLVED' ? 'postmortem' : 'summary';
+            const res = await api.get(`/api/ai/rooms/${roomId}/${endpoint}`);
+            const aiText = res.data[endpoint] || 'No summary available.';
+            
+            // Publish through WebSocket so it persists in DB
+            if (stompClient.current?.connected) {
+                stompClient.current.publish({
+                    destination: '/app/chat.sendMessage',
+                    body: JSON.stringify({ 
+                        type: 'SEND_MESSAGE', 
+                        roomId: roomId, 
+                        content: JSON.stringify({ text: aiText, isAi: true })
+                    }),
+                });
+            } else {
+                // Fallback: local-only if WS is disconnected
+                setMessages(prev => [...prev, {
+                    sender: 'AI',
+                    content: aiText,
+                    createdAt: new Date().toISOString()
+                }]);
+            }
+            
+        } catch (e) {
+            setMessages(prev => [...prev, {
+                sender: 'AI',
+                content: '⚠️ Could not reach CYAI. Check your API configuration.',
+                createdAt: new Date().toISOString()
+            }]);
+        } finally {
+            setIsLoadingAi(false);
+            setTypingUsers(prev => {
+                const next = new Set(prev);
+                next.delete('CYAI');
+                return next;
+            });
+        }
+    };
+
+    const handleAskAi = async (prompt: string) => {
+        setIsLoadingAi(true);
+        setTypingUsers(prev => new Set(prev).add('CYAI'));
+        
+        try {
+            const res = await api.post(`/api/ai/rooms/${roomId}/ask`, { query: prompt });
+            const aiText = res.data.reply || 'No response from AI.';
+            
+            // Publish through WebSocket so it persists in DB
+            if (stompClient.current?.connected) {
+                stompClient.current.publish({
+                    destination: '/app/chat.sendMessage',
+                    body: JSON.stringify({ 
+                        type: 'SEND_MESSAGE', 
+                        roomId: roomId, 
+                        content: JSON.stringify({ text: aiText, isAi: true })
+                    }),
+                });
+            } else {
+                setMessages(prev => [...prev, {
+                    sender: 'AI',
+                    content: aiText,
+                    createdAt: new Date().toISOString()
+                }]);
+            }
+        } catch (e) {
+            setMessages(prev => [...prev, {
+                sender: 'AI',
+                content: '⚠️ Could not reach CYAI. Check your API configuration.',
+                createdAt: new Date().toISOString()
+            }]);
+        } finally {
+            setIsLoadingAi(false);
+            setTypingUsers(prev => {
+                const next = new Set(prev);
+                next.delete('CYAI');
+                return next;
+            });
+        }
+    };
+
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        if (!files.length) return;
+        
+        files.forEach(file => {
+            const reader = new FileReader();
+            reader.onload = (re) => {
+                const base64 = re.target?.result as string;
+                if (base64) {
+                    setPendingAttachments(prev => [...prev, {
+                        name: file.name,
+                        type: file.type || 'application/octet-stream',
+                        data: base64,
+                        size: file.size
+                    }]);
+                }
+            };
+            reader.readAsDataURL(file);
+        });
+        e.target.value = '';
+    };
+
+    const removeAttachment = (index: number) => {
+        setPendingAttachments(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleThreadSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (activeThreadIdx === null || !threadInput.trim() || status !== 'live' || !stompClient.current) return;
+        
+        try {
+            const payload = JSON.stringify({
+                text: threadInput.trim(),
+                files: [],
+                parentId: `msg_${activeThreadIdx}` // The crucial threaded link
+            });
+            
+            stompClient.current.publish({
+                destination: `/app/chat.sendMessage`,
+                body: JSON.stringify({
+                    roomId,
+                    senderEmail: currentUserEmail,
+                    content: payload,
+                    type: 'SEND_MESSAGE'
+                })
+            });
+            setThreadInput('');
+        } catch (err) {
+            console.error("Thread send error", err);
+        }
+    };
+
+    const sendMessage = async (e?: React.FormEvent) => {
+        e?.preventDefault();
+        if ((!inputMsg.trim() && pendingAttachments.length === 0) || !stompClient.current?.connected) return;
+
+        const myEmail = localStorage.getItem('cymops_email') || '';
+        
+        // Command interception — /ai <query>
+        if (inputMsg.trim().startsWith('/ai')) {
+            const raw = inputMsg.trim();
+            // Extract everything after "/ai " (with a space)
+            const prompt = raw.length > 3 ? raw.substring(3).trim() : '';
+
+            // Show the user's command in chat instantly
+            stompClient.current.publish({
+                destination: '/app/chat.sendMessage',
+                body: JSON.stringify({ type: 'SEND_MESSAGE', roomId: roomId, content: raw }),
+            });
+
+            if (!prompt) {
+                // No query provided — show inline help
+                setMessages(prev => [...prev, {
+                    sender: 'AI',
+                    content: '💡 **Usage:** Type `/ai <your question>` to ask CYAI.\n\nExamples:\n• `/ai what is the root cause?`\n• `/ai summarize the incident so far`\n• `/ai suggest next steps`',
+                    createdAt: new Date().toISOString()
+                }]);
+            } else {
+                handleAskAi(prompt);
+            }
+
+            setInputMsg('');
+            return;
+        }
+        
+        let contentStr = inputMsg.trim();
+        if (pendingAttachments.length > 0) {
+            contentStr = JSON.stringify({ text: inputMsg.trim(), files: pendingAttachments });
+        }
+
+        addRoomActivity(roomId!, inputMsg.trim() || 'Attached a file', myEmail, true);
+
+        stompClient.current.publish({
+            destination: '/app/chat.sendMessage',
+            body: JSON.stringify({ type: 'SEND_MESSAGE', roomId: roomId, content: contentStr }),
+        });
+
+        setInputMsg('');
+        setPendingAttachments([]);
+        
+        // Reset textarea height manually after send
+        if (inputRef.current) {
+            inputRef.current.style.height = 'auto';
+            inputRef.current.focus();
+        }
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        } else {
+            // Send typing indicator
+            if (stompClient.current?.connected) {
+                const myEmail = localStorage.getItem('cymops_email') || '';
+                stompClient.current.publish({
+                    destination: '/app/chat.sendMessage',
+                    body: JSON.stringify({ type: 'TYPING', roomId: roomId, user: myEmail.split('@')[0] }),
+                });
+            }
+        }
+    };
+
+    const toggleReaction = (idx: number, emoji: string) => {
+        const msgKey = `msg_${idx}`;
+        const myEmail = localStorage.getItem('cymops_email') || 'User';
+        
+        // Optimistically update (DEEP COPY to ensure React renders)
+        setReactions(prev => {
+            const newReactions = { ...prev };
+            newReactions[msgKey] = { ...(prev[msgKey] || {}) };
+            
+            // Remove user from all other emojis on this message (single-reaction rule)
+            for (const otherEmoji of Object.keys(newReactions[msgKey])) {
+                if (otherEmoji !== emoji) {
+                    const uList = newReactions[msgKey][otherEmoji] || [];
+                    if (uList.includes(myEmail)) {
+                        const filtered = uList.filter(u => u !== myEmail);
+                        if (filtered.length === 0) delete newReactions[msgKey][otherEmoji];
+                        else newReactions[msgKey][otherEmoji] = filtered;
+                    }
+                }
+            }
+
+            const currentUsers = newReactions[msgKey][emoji] ? [...newReactions[msgKey][emoji]] : [];
+            
+            if (currentUsers.includes(myEmail)) {
+                const nextUsers = currentUsers.filter(u => u !== myEmail);
+                if (nextUsers.length === 0) delete newReactions[msgKey][emoji];
+                else newReactions[msgKey][emoji] = nextUsers;
+            } else {
+                currentUsers.push(myEmail);
+                newReactions[msgKey][emoji] = currentUsers;
+            }
+            localStorage.setItem(`cymops_reactions_${roomId}`, JSON.stringify(newReactions));
+            return newReactions;
+        });
+
+        // Broadcast reaction
+        if (stompClient.current?.connected) {
+            stompClient.current.publish({
+                destination: '/app/chat.sendMessage',
+                body: JSON.stringify({ type: 'REACTION', roomId: roomId, msgKey: msgKey, emoji: emoji, user: myEmail }),
+            });
+        }
+    };
+
+    const autoResize = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        setInputMsg(e.target.value);
+        e.target.style.height = 'auto';
+        e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px';
+    };
+
+
+
+    const renderAttachment = (file: Attachment) => {
+        const isImage = file.type.startsWith('image/');
+        const isVideo = file.type.startsWith('video/');
+
+        if (isImage) {
+            return (
+                <div style={{ marginTop: '8px', width: '100%', display: 'flex', overflow: 'hidden', borderRadius: '8px' }}>
+                    <a href={file.data} download={file.name} title="Download">
+                        <img src={file.data} alt={file.name} style={{ maxWidth: '100%', height: 'auto', display: 'block' }} />
+                    </a>
+                </div>
+            );
+        }
+
+        if (isVideo) {
+            return (
+                <div style={{ marginTop: '8px', width: '100%', borderRadius: '8px', overflow: 'hidden' }}>
+                    <video src={file.data} controls style={{ width: '100%', display: 'block', background: '#000' }} />
+                </div>
+            );
+        }
+
+        return (
+            <div style={{
+                display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', 
+                background: 'rgba(0,0,0,0.1)', borderRadius: '8px', width: '100%', marginTop: '8px', 
+                cursor: 'pointer'
+            }} 
+            onClick={() => {
+                const a = document.createElement('a');
+                a.href = file.data;
+                a.download = file.name;
+                a.click();
+            }}>
+                <FileText size={20} style={{ opacity: 0.8 }} />
+                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{file.name}</span>
+                    {file.size && <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>{(file.size / 1024).toFixed(1)} KB</span>}
+                </div>
+                <Download size={16} style={{ opacity: 0.6 }} />
+            </div>
+        );
+    };
+
+    const renderMessageContent = (m: any, _isMe: boolean = false) => {
+        let text = m.content;
+        let files: Attachment[] = [];
+        let isAiPayload = false;
+
+        try {
+            const parsed = JSON.parse(m.content);
+            if (parsed.text !== undefined || parsed.files !== undefined) {
+                text = parsed.text;
+                files = parsed.files || [];
+            }
+            if (parsed.isAi) isAiPayload = true;
+        } catch (e) {
+            // legacy plain text
+        }
+
+        const isAi = m.sender === 'AI' || m?.sender?.email === 'AI' || isAiPayload;
+
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+                {isAi && (
+                    <div className="ir-cyai-header">
+                        <Sparkles size={12} />
+                        <span>CYAI</span>
+                    </div>
+                )}
+                {text && (
+                    isAi ? (
+                        <div className="ir-cyai-content">
+                            {renderMarkdown(text)}
+                        </div>
+                    ) : (
+                        <div style={{ fontSize: '14.5px', lineHeight: '1.55', whiteSpace: 'pre-wrap', color: 'inherit', wordBreak: 'break-word' }}>
+                            {text}
+                        </div>
+                    )
+                )}
+                {files.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: text ? '4px' : '0' }}>
+                        {files.map((f, i) => <div key={i}>{renderAttachment(f)}</div>)}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    const statusConfig = {
+        connecting: { color: 'var(--warning)', label: 'Connecting' },
+        live: { color: 'var(--success)', label: 'Live' },
+        error: { color: 'var(--danger)', label: 'Error' },
+        disconnected: { color: 'var(--text-tertiary)', label: 'Offline' },
+    };
+    const st = statusConfig[status];
+
+    // Format time helper
+    const formatTime = (ts: string) => {
+        if (!ts) return '';
+        const d = new Date(ts);
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
+
+    // Date separator helper
+    const getDateString = (ts: string | number | Date) => {
+        if (!ts) return 'Unknown';
+        const d = new Date(ts);
+        const today = new Date();
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        
+        if (d.toDateString() === today.toDateString()) return 'Today';
+        if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+        return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    };
+
+    return (
+        <>
+        <div className="incident-grid" style={{ display: 'flex', flexDirection: 'row', height: 'calc(100vh - 120px)', width: '100%', gap: '16px' }}>
+            <div className="ir-panel incident-panel-main" style={{ flex: 1, minWidth: 0 }}>
+                {/* Header */}
+                <header className="ir-header">
+                    <button onClick={() => navigate(-1)} className="btn-ghost" style={{ padding: '8px' }}>
+                        <ArrowLeft size={18} />
+                    </button>
+                    <div className="ir-room-icon">
+                        <Hash size={18} color="#fff" />
+                    </div>
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>
+                            {roomData?.name || `Incident #${roomId}`}
+                        </h2>
+                        <span className={`ir-conn-badge ${status}`}>
+                            <span className={`status-dot ${status === 'live' ? 'online pulse-online' : 'offline'}`} style={{ height: '6px', width: '6px' }}></span>
+                            {st.label}
+                        </span>
+                    </div>
+                    
+                    {roomData && (
+                        <select className="ir-status-select" value={roomData.status} onChange={(e) => handleStatusChange(e.target.value)}>
+                            <option value="OPEN">OPEN</option>
+                            <option value="INVESTIGATING">INVESTIGATING</option>
+                            <option value="MITIGATED">MITIGATED</option>
+                            <option value="RESOLVED">RESOLVED</option>
+                        </select>
+                    )}
+                </header>
+
+                {/* Messages Area */}
+                <main className="ir-messages">
+                    {messages.length === 0 && (
+                        <div className="ir-empty">
+                            <div className="ir-empty-icon" style={{ position: 'relative' }}>
+                                <Hash size={32} style={{ opacity: 0.5, color: 'var(--accent)' }} />
+                                <div style={{ position: 'absolute', inset: '-4px', borderRadius: '26px', background: 'linear-gradient(135deg, rgba(108,92,231,0.15), rgba(162,155,254,0.08))', filter: 'blur(8px)', animation: 'cyaiPulse 3s ease-in-out infinite' }} />
+                            </div>
+                            <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>Welcome to the Incident Room</h3>
+                            <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--text-tertiary)', maxWidth: '360px', textAlign: 'center', lineHeight: '1.6' }}>This is the start of your collaboration. Send a message or use <span style={{ color: 'var(--accent-text)', fontWeight: 600 }}>/ai</span> to get CYAI insights.</p>
+                        </div>
+                    )}
+
+                    <div style={{ padding: '24px 0' }}>
+                        {messages.map((m: any, idx: number) => {
+                            const sender = m.sender?.email || m.sender || 'System';
+                            
+                            let parsedContent: any = null;
+                            try { parsedContent = JSON.parse(m.content); } catch(e) {}
+                            
+                            const isAiMessage = sender === 'AI' || parsedContent?.isAi;
+                            const isMe = sender === currentUserEmail && !isAiMessage;
+                            const isAi = isAiMessage;
+                            
+                            const prevMessage = idx > 0 ? messages[idx - 1] : null;
+                            const prevSender = prevMessage ? (prevMessage.sender?.email || prevMessage.sender || 'System') : null;
+                            let prevParsedContent: any = null;
+                            try { if(prevMessage) prevParsedContent = JSON.parse(prevMessage.content); } catch(e) {}
+                            const isPrevAi = prevSender === 'AI' || prevParsedContent?.isAi;
+                            
+                            // 🚀 Hide threaded replies from the main view
+                            if (parsedContent && parsedContent.parentId) return null;
+
+                            // 🚀 Count current threaded replies
+                            const threadReplies = messages.filter(r => {
+                                try { const p = JSON.parse(r.content); return p.parentId === `msg_${idx}`; } catch(e) { return false; }
+                            });
+
+                            const tThis = new Date(m.createdAt || m.ts || Date.now());
+                            const tPrev = prevMessage ? new Date(prevMessage.createdAt || prevMessage.ts || Date.now()) : null;
+                            
+                            // Date Separator Math
+                            const showDateSeparator = !tPrev || tThis.toDateString() !== tPrev.toDateString();
+
+                            // Check if within 5 mins to group
+                            let isSameGroup = prevSender === sender && isAi === isPrevAi && !showDateSeparator;
+                            if (isSameGroup && tPrev) {
+                                if (tThis.getTime() - tPrev.getTime() > 5 * 60 * 1000) isSameGroup = false;
+                            }
+
+                            return (
+                                <React.Fragment key={idx}>
+                                    {showDateSeparator && (
+                                        <div className="ir-date-sep">
+                                            <span>{getDateString(tThis)}</span>
+                                        </div>
+                                    )}
+                                    <div className={`ir-msg-wrap ${isSameGroup ? 'grouped' : ''}`}>
+                                            {/* Reaction Actions Bar */}
+                                            <div className="ir-actions" style={{ [isMe ? 'left' : 'right']: '20px' }}>
+                                                {['✅', '👀', '👍', '🔥'].map(emoji => {
+                                                    const hasReacted = reactions[`msg_${idx}`]?.[emoji]?.includes(currentUserEmail);
+                                                    return (
+                                                        <button key={emoji} 
+                                                                className={`ir-action-btn ${hasReacted ? 'reacted' : ''}`} 
+                                                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleReaction(idx, emoji); }} 
+                                                                title={`React with ${emoji}`}>
+                                                            {emoji}
+                                                        </button>
+                                                    );
+                                                })}
+                                                <div style={{ width: '1px', height: '16px', background: 'var(--border-default)', margin: '0 3px' }}></div>
+                                                <button className="ir-action-btn" onClick={() => setActiveThreadIdx(idx)} title="Reply in Thread">💬</button>
+                                            </div>
+
+                                            <div className="ir-msg-row" style={{ flexDirection: isMe ? 'row-reverse' : 'row' }}>
+                                                
+                                                {/* Avatar */}
+                                                {!isMe && (
+                                                    <div style={{ width: '36px', flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+                                                        {!isSameGroup ? (
+                                                            <div className={`ir-avatar ${isAi ? 'ai' : 'user'}`}>
+                                                                {isAi ? '✨' : (sender[0]?.toUpperCase() || '?')}
+                                                            </div>
+                                                        ) : (
+                                                            <div style={{ width: '36px' }}></div>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {/* Content */}
+                                                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, alignItems: isMe ? 'flex-end' : 'flex-start' }}>
+                                                    {!isSameGroup && (
+                                                        <div className="ir-meta" style={{ flexDirection: isMe ? 'row-reverse' : 'row' }}>
+                                                            <span className="username">
+                                                                {isMe ? 'You' : (isAi ? 'CYAI' : sender.split('@')[0])}
+                                                            </span>
+                                                            <span className="time">
+                                                                {formatTime(m.createdAt || m.ts)}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {/* Bubble */}
+                                                    <div className={`ir-bubble ${isMe ? 'mine' : (isAi ? 'ai-bubble' : 'other')}`} style={{ maxWidth: isMe ? '60%' : undefined }}>
+                                                        {renderMessageContent(m, isMe)}
+                                                    </div>
+                                                    
+                                                    {/* Reactions */}
+                                                    {reactions[`msg_${idx}`] && Object.keys(reactions[`msg_${idx}`]).length > 0 && (
+                                                        <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap', justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
+                                                            {Object.entries(reactions[`msg_${idx}`]).map(([emoji, users]) => (
+                                                                <div key={emoji} 
+                                                                     className={`ir-reaction-pill ${users.includes(currentUserEmail) ? 'active' : ''}`}
+                                                                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleReaction(idx, emoji); }} 
+                                                                     title={users.join(', ')}>
+                                                                    <span>{emoji}</span>
+                                                                    <span style={{ fontWeight: 700, fontSize: '0.75rem', color: users.includes(currentUserEmail) ? 'var(--accent)' : 'var(--text-secondary)' }}>{users.length}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Thread */}
+                                                    {threadReplies.length > 0 && (
+                                                        <div className="ir-thread-link" onClick={() => setActiveThreadIdx(idx)} style={{ alignSelf: isMe ? 'flex-end' : 'flex-start' }}>
+                                                            <div style={{ display: 'flex', marginRight: '4px' }}>
+                                                                <div style={{ width: '16px', height: '16px', borderRadius: '4px', background: 'var(--info)', border: '1px solid var(--bg-surface)', zIndex: 3 }} />
+                                                                {threadReplies.length > 1 && <div style={{ width: '16px', height: '16px', borderRadius: '4px', background: 'var(--success)', border: '1px solid var(--bg-surface)', marginLeft: '-8px', zIndex: 2 }} />}
+                                                            </div>
+                                                            <span>{threadReplies.length} {threadReplies.length === 1 ? 'reply' : 'replies'}</span>
+                                                            <span style={{ color: 'var(--text-tertiary)', fontWeight: 500 }}>→ View thread</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                </React.Fragment>
+                            );
+                        })}
+                        
+                        {/* Typing Indicator */}
+                        {typingUsers.size > 0 && (
+                            <div className="ir-typing">
+                                <div className="ir-typing-dots">
+                                    <div className="ir-typing-dot"></div>
+                                    <div className="ir-typing-dot"></div>
+                                    <div className="ir-typing-dot"></div>
+                                </div>
+                                <span>{Array.from(typingUsers).join(', ')} {typingUsers.size > 1 ? 'are' : 'is'} typing...</span>
+                            </div>
+                        )}
+                        <div ref={messagesEndRef} style={{ height: '24px' }} />
+                    </div>
+                </main>
+
+                {/* Input Area */}
+                <footer className="ir-input-wrap">
+                    <div className="ir-input-box">
+                        
+                        {/* Pending Attachments */}
+                        {pendingAttachments.length > 0 && (
+                            <div className="ir-attach-preview">
+                                {pendingAttachments.map((f, i) => (
+                                    <div key={i} className="ir-attach-thumb">
+                                        {f.type.startsWith('image/') ? (
+                                            <img src={f.data} alt={f.name} />
+                                        ) : (
+                                            <FileText size={22} color="var(--text-secondary)" />
+                                        )}
+                                        <button className="ir-attach-remove" onClick={() => removeAttachment(i)}>
+                                            <X size={10} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        <form onSubmit={sendMessage} style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
+                            <label className="ir-attach-btn">
+                                <Paperclip size={20} />
+                                <input type="file" style={{ display: 'none' }} multiple accept="*/*" onChange={handleFileSelect} />
+                            </label>
+                            
+                            <textarea
+                                ref={inputRef}
+                                value={inputMsg}
+                                onChange={autoResize}
+                                onKeyDown={handleKeyDown}
+                                placeholder="Message incident room... (try /ai for CYAI)"
+                            />
+
+                            <button
+                                type="submit"
+                                disabled={status !== 'live' || (!inputMsg.trim() && pendingAttachments.length === 0)}
+                                className={`ir-send-btn ${(inputMsg.trim() || pendingAttachments.length > 0) && status === 'live' ? 'active' : 'inactive'}`}
+                            >
+                                <Send size={18} />
+                            </button>
+                        </form>
+                    </div>
+                </footer>
+            </div>
+            
+            {/* Dynamic Sidebar: Thread OR Timeline */}
+            {activeThreadIdx !== null ? (
+                <aside className="ir-sidebar" style={{ width: '380px', minWidth: '380px' }}>
+                    <div className="ir-sidebar-header">
+                        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            Thread
+                            <span className="badge badge-primary" style={{ fontSize: '0.7rem', padding: '2px 10px', borderRadius: '20px' }}>
+                                {messages[activeThreadIdx]?.sender?.email?.split('@')[0] || messages[activeThreadIdx]?.sender?.split('@')[0]}
+                            </span>
+                        </h3>
+                        <button onClick={() => setActiveThreadIdx(null)} className="btn-ghost" style={{ padding: '6px' }}>
+                            <X size={18} />
+                        </button>
+                    </div>
+
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        {/* Parent Message */}
+                        {(() => {
+                            const rootMsg = messages[activeThreadIdx];
+                            if (!rootMsg) return null;
+                            const isMe = (rootMsg.sender?.email || rootMsg.sender) === currentUserEmail;
+                            return (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'var(--bg-elevated)', padding: '16px', borderRadius: '14px', border: '1px solid var(--border-default)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>{isMe ? 'You' : (rootMsg.sender?.email?.split('@')[0] || rootMsg.sender)}</span>
+                                        <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>{formatTime(rootMsg.createdAt || rootMsg.ts)}</span>
+                                    </div>
+                                    <div style={{ fontSize: '0.9rem', color: 'var(--text-primary)', wordBreak: 'break-word' }}>
+                                        {renderMessageContent(rootMsg, false)}
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
+                        <div className="ir-date-sep" style={{ margin: '8px 0' }}>
+                            <span>
+                                {messages.filter(r => {
+                                    try { const p = JSON.parse(r.content); return p.parentId === `msg_${activeThreadIdx}`; } catch(e) { return false; }
+                                }).length} Replies
+                            </span>
+                        </div>
+
+                        {/* Thread Replies */}
+                        {messages.filter(r => {
+                            try { const p = JSON.parse(r.content); return p.parentId === `msg_${activeThreadIdx}`; } catch(e) { return false; }
+                        }).map((r: any, i: number) => {
+                            const isMe = (r.sender?.email || r.sender) === currentUserEmail;
+                            return (
+                                <div key={i} style={{ display: 'flex', gap: '12px', flexDirection: isMe ? 'row-reverse' : 'row' }}>
+                                    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start' }}>
+                                        <div className="ir-meta" style={{ flexDirection: isMe ? 'row-reverse' : 'row', marginBottom: '4px' }}>
+                                            <span className="username" style={{ fontSize: '0.8rem' }}>{isMe ? 'You' : (r.sender?.email?.split('@')[0] || r.sender)}</span>
+                                            <span className="time">{formatTime(r.createdAt || r.ts)}</span>
+                                        </div>
+                                        <div className={`ir-bubble ${isMe ? 'mine' : 'other'}`} style={{ maxWidth: '100%', fontSize: '0.85rem' }}>
+                                            {renderMessageContent(r, false)}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Thread Input */}
+                    <div className="ir-input-wrap" style={{ padding: '14px 16px', borderTop: '1px solid var(--border-default)' }}>
+                        <form onSubmit={handleThreadSubmit} className="ir-input-box" style={{ flexDirection: 'row', padding: '8px 12px', alignItems: 'center', gap: '8px' }}>
+                            <input 
+                                type="text"
+                                value={threadInput}
+                                onChange={(e) => setThreadInput(e.target.value)}
+                                placeholder="Reply in thread..."
+                                style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text-primary)', fontSize: '0.9rem' }}
+                            />
+                            <button type="submit" disabled={!threadInput.trim()} 
+                                className={`ir-send-btn ${threadInput.trim() ? 'active' : 'inactive'}`}
+                                style={{ width: '32px', height: '32px' }}>
+                                <Send size={14} />
+                            </button>
+                        </form>
+                    </div>
+                </aside>
+            ) : (
+                <aside className="ir-sidebar" style={{ width: '320px', minWidth: '320px' }}>
+                    <div className="ir-sidebar-header">
+                        <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>Timeline & AI</h3>
+                        <button onClick={() => handleGenerateSummary()} className="ir-ai-btn">
+                            ✨ Insight
+                        </button>
+                    </div>
+                    
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '18px 14px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                        {timelineEvents.map((ev, i) => {
+                            // Smart detect: is this event an AI response?
+                            let isCyai = ev.eventType === 'CYAI_REVIEW';
+                            let displayContent = ev.content || '';
+
+                            if (ev.eventType === 'MESSAGE') {
+                                const raw = ev.content || '';
+                                try {
+                                    let toParse = raw;
+                                    let prefix = '';
+                                    if (!toParse.trim().startsWith('{')) {
+                                        const bi = toParse.indexOf('{');
+                                        if (bi > 0) { prefix = toParse.substring(0, bi); toParse = toParse.substring(bi); }
+                                    }
+                                    const parsed = JSON.parse(toParse);
+                                    if (parsed.isAi) {
+                                        isCyai = true;
+                                        displayContent = 'CYAI generated incident analysis';
+                                    } else {
+                                        let t = parsed.text || '';
+                                        if (parsed.files?.length) t += (t ? ' ' : '') + '[Attached Files]';
+                                        displayContent = prefix + t;
+                                    }
+                                } catch {
+                                    // Plain text — detect AI preamble patterns
+                                    const afterColon = raw.includes(':') ? raw.substring(raw.indexOf(':') + 1).trim() : raw;
+                                    const aiHints = ['As an expert', '**Incident Summary', '## Incident', '### 1.', '**Executive Summary', 'CYAI generated'];
+                                    if (aiHints.some(h => afterColon.startsWith(h) || afterColon.includes(h))) {
+                                        isCyai = true;
+                                        displayContent = 'CYAI generated incident analysis';
+                                    } else {
+                                        displayContent = raw;
+                                    }
+                                }
+                                // Truncate long normal messages
+                                if (!isCyai && displayContent.length > 120) {
+                                    displayContent = displayContent.substring(0, 120) + '…';
+                                }
+                            }
+
+                            let icon: React.ReactNode = <Hash size={13} />;
+                            let color = 'var(--text-tertiary)';
+                            if (isCyai) { icon = <Sparkles size={13} />; color = '#a78bfa'; }
+                            else if (ev.eventType === 'STATUS_CHANGE') color = 'var(--warning)';
+                            else if (ev.eventType === 'ROOM_CREATED') color = 'var(--success)';
+                            else if (ev.eventType === 'MESSAGE') color = 'var(--accent)';
+
+                            return (
+                                <div key={ev.id || i} className={`ir-timeline-event ${isCyai ? 'cyai' : ''}`}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                        <div className={`ir-timeline-dot ${isCyai ? 'cyai-dot' : ''}`} style={{ border: `2px solid ${color}`, color: color, ...(isCyai ? { background: 'linear-gradient(135deg, rgba(99,102,241,0.15), rgba(167,139,250,0.15))' } : {}) }}>
+                                            {icon}
+                                        </div>
+                                        {i !== timelineEvents.length - 1 && <div className="ir-timeline-line"></div>}
+                                    </div>
+                                    <div style={{ paddingBottom: i !== timelineEvents.length - 1 ? '12px' : '0', flex: 1, minWidth: 0 }}>
+                                        {isCyai && (
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.65rem', fontWeight: 800, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '3px', background: 'rgba(167,139,250,0.1)', padding: '2px 7px', borderRadius: '4px' }}>
+                                                <Sparkles size={9} /> CYAI Reviewed
+                                            </span>
+                                        )}
+                                        <p style={{ margin: 0, fontSize: '0.83rem', color: isCyai ? '#c4b5fd' : 'var(--text-primary)', lineHeight: '1.45', fontWeight: isCyai ? 600 : 500, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+                                            {displayContent}
+                                        </p>
+                                        <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>{new Date(ev.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        {timelineEvents.length === 0 && (
+                            <div className="ir-empty" style={{ padding: '40px 0' }}>
+                                <p style={{ margin: 0, fontSize: '0.85rem' }}>No events recorded yet.</p>
+                            </div>
+                        )}
+                    </div>
+                </aside>
+            )}
+        </div>
+        </>
+    );
+};
+
+export default IncidentRoomPage;

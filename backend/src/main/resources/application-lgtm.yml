@@ -1,0 +1,17 @@
+observability:
+  storage:
+    provider: ${OBSERVABILITY_STORAGE_PROVIDER:lgtm}
+    tenant-header: ${OBSERVABILITY_TENANT_HEADER:X-Scope-OrgID}
+    metrics:
+      backend: ${OBSERVABILITY_METRICS_BACKEND:prometheus}
+      remote-write-url: ${PROMETHEUS_REMOTE_WRITE_URL:}
+      scrape-path: ${PROMETHEUS_SCRAPE_PATH:/actuator/prometheus}
+    logs:
+      backend: ${OBSERVABILITY_LOGS_BACKEND:loki}
+      push-url: ${LOKI_PUSH_URL:}
+    traces:
+      backend: ${OBSERVABILITY_TRACES_BACKEND:tempo}
+      otlp-endpoint: ${TEMPO_OTLP_ENDPOINT:}
+      otlp-protocol: ${TEMPO_OTLP_PROTOCOL:http/protobuf}
+    fallback:
+      postgres-event-store-enabled: ${OBSERVABILITY_FALLBACK_POSTGRES_ENABLED:true}
