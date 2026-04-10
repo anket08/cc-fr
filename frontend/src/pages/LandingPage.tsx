@@ -219,6 +219,8 @@ const LandingPage: React.FC = () => {
     const navigate = useNavigate();
     const containerRef = useRef<HTMLDivElement>(null);
     const { scrollYProgress } = useScroll({ target: containerRef, offset: ["start start", "end end"] });
+    const isMobileDevice = typeof window !== 'undefined' && window.innerWidth < 768;
+    const scrollProgressToUse = isMobileDevice ? { get: () => 0, onChange: () => () => {}, onRenderRequest: () => {}, destroy: () => {}, clearListeners: () => {}, updateAndNotify: () => {}, set: () => {}, getVelocity: () => 0, current: 0 } as any : scrollYProgress; // Dummy motion value if needed, but best just to not use it
     const lineHeight = useTransform(scrollYProgress, [0, 1], ["0%", "100%"]);
 
     const [isChangelogOpen, setIsChangelogOpen] = useState(false);
@@ -228,6 +230,7 @@ const LandingPage: React.FC = () => {
     // Animation stage for floating icons to logo transition
     // 0 = Icons float in, 1 = Fly to center, 2 = Explosion flash, 3 = Logo grows from orb
     const [animationStage, setAnimationStage] = useState(0);
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
 
     React.useEffect(() => {
         const t1 = setTimeout(() => setAnimationStage(1), 3000);  // icons fly to center
@@ -376,11 +379,11 @@ const LandingPage: React.FC = () => {
                         style={{
                             position: 'absolute',
                             bottom: '65vh', left: '50%', transform: 'translateX(-50%)',
-                            width: '130vw', height: '130vw', maxWidth: '1600px', maxHeight: '1600px',
+                            width: isMobile ? '80vw' : '130vw', height: isMobile ? '80vw' : '130vw', maxWidth: '1600px', maxHeight: '1600px',
                             borderRadius: '50%',
                             background: 'radial-gradient(circle at 50% 50%, rgba(20,8,2,1) 0%, rgba(10,4,1,1) 30%, #0B0501 70%)',
                             borderBottom: '4px solid rgba(255,140,50,0.8)',
-                            boxShadow: '0 40px 100px rgba(255,110,20,0.1), inset 0 -40px 100px rgba(255,100,0,0.15)',
+                            boxShadow: isMobile ? 'none' : '0 40px 100px rgba(255,110,20,0.1), inset 0 -40px 100px rgba(255,100,0,0.15)',
                             zIndex: 1,
                         }}
                     >
@@ -390,7 +393,7 @@ const LandingPage: React.FC = () => {
                             bottom: 0, left: '20%', right: '20%', height: '20%',
                             borderRadius: '50%',
                             background: 'radial-gradient(ellipse at bottom, rgba(255,120,40,0.4) 0%, transparent 70%)',
-                            filter: 'blur(30px)'
+                            filter: isMobile ? 'none' : 'blur(30px)'
                         }} />
                         {/* Faint side glows */}
                         <div style={{
@@ -438,20 +441,21 @@ const LandingPage: React.FC = () => {
                         <div style={{
                             position: 'absolute', width: '40px', height: '40px', background: '#fff',
                             transform: 'rotate(45deg)', borderRadius: '8px',
-                            boxShadow: '0 0 40px 15px rgba(255,255,255,0.9), 0 0 80px 30px rgba(255,104,3,0.6)'
+                            boxShadow: isMobile ? 'none' : '0 0 40px 15px rgba(255,255,255,0.9), 0 0 80px 30px rgba(255,104,3,0.6)'
                         }} />
                     </motion.div>
 
                     {/* ─ FLOATING ICONS ROW (Merge Animation) ─ */}
-                    <div style={{ position: 'absolute', top: '35vh', left: '50%', zIndex: 4, transform: 'translateY(-50%)' }}>
+                    {!isMobile && (
+                        <div style={{ position: 'absolute', top: '35vh', left: '50%', zIndex: 4, transform: 'translateY(-50%)' }}>
                         {iconSymbols.map((icon, i) => {
-                            const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+                            const isIconMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
                             const isCenter = i === 3 || i === 4;
-                            const sizeStr = isMobile ? '32px' : (isCenter ? '54px' : '44px');
-                            const sizeNum = isMobile ? 32 : (isCenter ? 54 : 44);
+                            const sizeStr = isIconMobile ? '32px' : (isCenter ? '54px' : '44px');
+                            const sizeNum = isIconMobile ? 32 : (isCenter ? 54 : 44);
 
                             let xPos;
-                            if (isMobile) {
+                            if (isIconMobile) {
                                 // Phone: Equidistant spacing securely within screen width using pixels, avoiding center orb
                                 const gap = 32; // px apart for the groups
                                 const centerAvoidance = 32; // extra push from center
@@ -492,8 +496,8 @@ const LandingPage: React.FC = () => {
                                         border: '1px solid rgba(255,255,255,0.2)',
                                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                                         color: 'rgba(255,255,255,0.9)',
-                                        backdropFilter: 'blur(16px)',
-                                        boxShadow: '0 4px 30px rgba(0,0,0,0.5), inset 0 0 20px rgba(255,255,255,0.1)',
+                                        backdropFilter: isIconMobile ? 'none' : 'blur(16px)',
+                                        boxShadow: isIconMobile ? 'none': '0 4px 30px rgba(0,0,0,0.5), inset 0 0 20px rgba(255,255,255,0.1)',
                                         pointerEvents: 'auto' as const,
                                         marginTop: `-${sizeNum / 2}px`
                                     }}
@@ -527,6 +531,7 @@ const LandingPage: React.FC = () => {
                             </div>
                         )}
                     </AnimatePresence>
+                    )}
 
                     {/* ─ LOGO GROWS FROM ORB (after explosion) ─ */}
                     {animationStage >= 3 && (
@@ -564,7 +569,7 @@ const LandingPage: React.FC = () => {
                                     transform: 'translate(-50%, -50%)',
                                     borderRadius: '50%',
                                     background: 'radial-gradient(circle, rgba(255,104,3,0.4) 0%, rgba(255,60,0,0.15) 40%, transparent 65%)',
-                                    animation: 'fieryGlowOuter 2s ease-in-out infinite'
+                                    animation: isMobile ? 'none' : 'fieryGlowOuter 2s ease-in-out infinite'
                                 }} />
                                 {/* Bright inner white glow - fiery pulsing */}
                                 <div style={{
@@ -573,7 +578,7 @@ const LandingPage: React.FC = () => {
                                     left: '50%', top: '50%',
                                     borderRadius: '50%',
                                     background: 'radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(255,220,160,0.5) 30%, rgba(255,140,50,0.2) 55%, transparent 70%)',
-                                    animation: 'fieryPulse 2s ease-in-out infinite'
+                                    animation: isMobile ? 'none' : 'fieryPulse 2s ease-in-out infinite'
                                 }} />
                                 {/* Fire ring around logo */}
                                 <div style={{
@@ -583,8 +588,8 @@ const LandingPage: React.FC = () => {
                                     transform: 'translate(-50%, -50%)',
                                     borderRadius: '50%',
                                     border: '2px solid rgba(255,140,50,0.3)',
-                                    boxShadow: '0 0 30px 10px rgba(255,104,3,0.25), inset 0 0 30px 10px rgba(255,104,3,0.15)',
-                                    animation: 'fieryGlowOuter 2.5s ease-in-out infinite 0.3s'
+                                    boxShadow: isMobile ? 'none' : '0 0 30px 10px rgba(255,104,3,0.25), inset 0 0 30px 10px rgba(255,104,3,0.15)',
+                                    animation: isMobile ? 'none' : 'fieryGlowOuter 2.5s ease-in-out infinite 0.3s'
                                 }} />
                                 {/* The logo filled with WHITE + fiery breath */}
                                 <div style={{
@@ -599,14 +604,51 @@ const LandingPage: React.FC = () => {
                                     WebkitMaskPosition: 'center',
                                     maskPosition: 'center',
                                     background: '#FFFFFF',
-                                    boxShadow: '0 0 40px 15px rgba(255,255,255,0.9), 0 0 80px 30px rgba(255,104,3,0.6)',
-                                    animation: 'logoBreath 2s ease-in-out infinite'
+                                    boxShadow: isMobile ? 'none' : '0 0 40px 15px rgba(255,255,255,0.9), 0 0 80px 30px rgba(255,104,3,0.6)',
+                                    animation: isMobile ? 'none' : 'logoBreath 2s ease-in-out infinite'
                                 }} />
                             </motion.div>
                         </div>
                     )}
 
                     {/* ── HERO TEXT CONTENT ── */}
+                    {isMobile ? (
+                      <div style={{ padding: "100px 20px", textAlign: "center", position: 'relative', zIndex: 10, marginTop: '25vh' }}>
+                        <h1 className="landing-title" style={{ fontSize: 'clamp(32px, 8vw, 48px)', color: '#fff', textTransform: 'uppercase', textShadow: '0 4px 10px rgba(0,0,0,0.8)', marginBottom: '16px' }}>
+                          SIMPLIFYING DEVOPS CHAOS
+                        </h1>
+                        <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: '1rem', lineHeight: '1.6', marginBottom: '32px' }}>
+                          Smart DevOps Platform for a Smarter Tomorrow
+                        </p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'center' }}>
+                            <button
+                                onClick={() => navigate('/login')}
+                                style={{
+                                    background: '#fff', color: '#0B0501', border: 'none',
+                                    borderRadius: '10px', padding: '14px 34px',
+                                    fontWeight: 500, fontSize: '0.9rem', cursor: 'pointer',
+                                    fontFamily: "'Satoshi', sans-serif",
+                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                    width: '100%', justifyContent: 'center'
+                                }}
+                            >
+                                Get Started <span style={{ fontSize: '1.2rem', marginLeft: '4px' }}>→</span>
+                            </button>
+                            <button
+                                onClick={() => setIsChangelogOpen(true)}
+                                style={{
+                                    background: 'transparent', color: 'rgba(255,255,255,0.7)',
+                                    border: '1px solid rgba(255,255,255,0.15)',
+                                    borderRadius: '10px', padding: '14px 34px',
+                                    fontWeight: 400, fontSize: '0.9rem', cursor: 'pointer',
+                                    fontFamily: "'Satoshi', sans-serif', width: '100%', justifyContent: 'center'"
+                                }}
+                            >
+                                Contact Us
+                            </button>
+                        </div>
+                      </div>
+                    ) : (
                     <div style={{ position: 'relative', zIndex: 10, marginTop: '45vh', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0 16px' }}>
                         <motion.h1
                             className="landing-title"
@@ -685,6 +727,7 @@ const LandingPage: React.FC = () => {
                             </button>
                         </motion.div>
                     </div>
+                    )}
 
                     {/* ─ BOTTOM CORNER CARDS (Coinery style stats cards) ─ */}
                     <motion.div
@@ -764,11 +807,13 @@ const LandingPage: React.FC = () => {
                     {/* Timeline Rail */}
                     <div className="landing-timeline-rail">
                         <div style={{ position: 'absolute', top: 0, bottom: 0, width: '2px', background: 'rgba(255,255,255,0.04)' }}>
+                            {!isMobile && (
                             <motion.div style={{
                                 position: 'absolute', top: 0, left: 0, right: 0, height: lineHeight,
                                 background: 'linear-gradient(to bottom, transparent, #FF6803, #FEEBB8)',
                                 boxShadow: '0 0 10px #FF6803, 0 0 20px #FEEBB8',
                             }} />
+                            )}
                         </div>
                     </div>
 
